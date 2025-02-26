@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import List, Optional
 
 import streamlit as st
 from streamlit_pdf_viewer import pdf_viewer
@@ -27,9 +27,9 @@ def load_vector_store():
             print(f"Loading {pdf_path} ...")
             loader = PyMuPDFLoader(
                 pdf_path,
-                mode="page",                        # Process the document page by page
-                images_inner_format="html-img",     # Format for embedded images
-                images_parser=TesseractBlobParser(langs=[OCR_LANG])  # Use Tesseract for OCR
+                mode="page",
+                images_inner_format="html-img",
+                images_parser=TesseractBlobParser(langs=[OCR_LANG])
             )
             try:
                 docs = loader.load()
@@ -43,7 +43,7 @@ def load_vector_store():
     # Split the loaded documents into chunks
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=2000,
-        chunk_overlap=200  # Overlap to maintain context between chunks
+        chunk_overlap=200
     )
     split_docs = text_splitter.split_documents(all_docs)
     print(f"Total chunks created: {len(split_docs)}")
@@ -58,41 +58,62 @@ def load_vector_store():
 # Load the vector store once at startup
 vector_store = load_vector_store()
 
-# Define a synchronous function to find the most relevant document for a given query
-def find_relevant_doc(query: str, similarity_threshold=0.7) -> Optional[str]:
-    similar_docs = vector_store.similarity_search_with_relevance_scores(query, k=1)
-    if similar_docs:
-        most_similar_doc, most_similar_score = similar_docs[0]
+# Define a function to find the three most relevant documents for a given query
+def find_relevant_docs(query: str, similarity_threshold=0.7) -> List[str]:
+    similar_docs = vector_store.similarity_search_with_relevance_scores(query, k=3)
+    relevant_docs = set()
+    
+    for doc, score in similar_docs:
         print(f"Query: {query}")
-        print(f"Most similar doc: {most_similar_doc.metadata.get('file_path', 'unknown')}")
-        print(f"Most similar score: {most_similar_score}")
-        if most_similar_score > similarity_threshold:
-            return most_similar_doc.metadata.get("file_path")
-    return None
+        print(f"Document: {doc.metadata.get('file_path', 'unknown')}, Score: {score}")
+        if score > similarity_threshold:
+            relevant_docs.add(doc.metadata.get("file_path"))
+    
+    return relevant_docs
+
+# Function to list available documents
+def list_available_documents():
+    """Returns a list of PDF filenames in the docs folder."""
+    return [filename for filename in os.listdir(DOCS_FOLDER) if filename.lower().endswith(".pdf")]
 
 # Streamlit UI
 def main():
+    st.set_page_config(layout="wide")
+
     st.title("App di ricerca documentale con IA")
     
+    # Sidebar: Display available documents
+    st.sidebar.header("📂 Documenti disponibili")
+    available_docs = list_available_documents()
+    if available_docs:
+        for doc in available_docs:
+            st.sidebar.write(f"📄 {doc}")
+    else:
+        st.sidebar.write("Nessun documento disponibile.")
+
+    # Search input
     query = st.text_input("Inserire la chiave di ricerca:")
 
     if query:
-        doc_path = find_relevant_doc(query)
-        if doc_path:
-            st.success(f"Trovato documento inerente: {doc_path}")
-            if os.path.exists(doc_path):
-                # Provide a download button for the PDF
-                with open(doc_path, "rb") as file:
-                    st.download_button(
-                        label="Scarica PDF",
-                        data=file,
-                        file_name=os.path.basename(doc_path),
-                        mime="application/pdf"
-                    )
-                # Display the PDF using the streamlit_pdf_viewer
-                pdf_viewer(doc_path)
-            else:
-                st.error(f"Documento {doc_path} non trovato.")
+        doc_paths = find_relevant_docs(query)
+        if doc_paths:
+            num_docs = len(doc_paths)
+            cols = st.columns(num_docs)
+            
+            for i, doc_path in enumerate(doc_paths):
+                with cols[i]:
+                    if doc_path and os.path.exists(doc_path):
+                        st.write(f"**Documento {i+1}:** {os.path.basename(doc_path)}")
+                        with open(doc_path, "rb") as file:
+                            st.download_button(
+                                label=f"Scarica {os.path.basename(doc_path)}",
+                                data=file,
+                                file_name=os.path.basename(doc_path),
+                                mime="application/pdf"
+                            )
+                        pdf_viewer(doc_path)
+                    else:
+                        st.error(f"Documento {doc_path} non trovato.")
         else:
             st.error("Nessun documento rilevante è stato trovato per la tua chiave di ricerca.")
 
