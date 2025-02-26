@@ -10,6 +10,9 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+# Set the page layout to wide
+st.set_page_config(layout="wide")
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -78,8 +81,6 @@ def list_available_documents():
 
 # Streamlit UI
 def main():
-    st.set_page_config(layout="wide")
-
     st.title("App di ricerca documentale con IA")
     
     # Sidebar: Display available documents
